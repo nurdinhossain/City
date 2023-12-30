@@ -33,13 +33,35 @@ public class GenerateTerrain : MonoBehaviour
     // Array to store instantiated tiles
     private GameObject[,] terrainGrid;
 
+    // Dictionary for storing possible prefabs and orientations for each position
+    private Dictionary<Vector2Int, Dictionary<GameObject, List<int>>> possiblePrefabs = new Dictionary<Vector2Int, Dictionary<GameObject, List<int>>>();
+
+    // Lists for storing ordered positions and entropies
+    private List<Vector2Int> orderedPositions = new List<Vector2Int>();
+    private List<int> entropies = new List<int>();
+
     // Counter for backtracked tiles
     private int backtrackedTiles = 0;
 
     void Start()
     {
         // Initialize the prefabs array
-        prefabs = new GameObject[] { fourway, land, roadend, roadstraight, troad, turnroad };
+        prefabs = new GameObject[] { fourway, land, /*roadend,*/ roadstraight, troad, turnroad };
+
+        // Initialize the possible prefabs dictionary
+        for (int x = 0; x < gridSizeX; x++)
+        {
+            for (int z = 0; z < gridSizeZ; z++)
+            {
+                possiblePrefabs.Add(new Vector2Int(x, z), new Dictionary<GameObject, List<int>>());
+
+                // Add all prefabs to the dictionary
+                for (int i = 0; i < prefabs.Length; i++)
+                {
+                    possiblePrefabs[new Vector2Int(x, z)].Add(prefabs[i], new List<int>());
+                }
+            }
+        }
 
         // Initialize the array
         terrainGrid = new GameObject[gridSizeX, gridSizeZ];
@@ -96,6 +118,11 @@ public class GenerateTerrain : MonoBehaviour
             // Instantiate the land tile facing west
             terrainGrid[gridSizeX - 1, z] = Instantiate(land, new Vector3(gridSizeX - 1, 0, z), Quaternion.Euler(-90, 0, 0));
         }
+        
+        // Generate ordered list of positions from lowest to highest entropy
+        GenerateOrderedPositions();
+
+        UnityEngine.Debug.Log("Ordered positions: " + orderedPositions.Count);
 
         // Generate the terrain grid
         Stopwatch stopwatch = new Stopwatch();
@@ -110,7 +137,7 @@ public class GenerateTerrain : MonoBehaviour
         UnityEngine.Debug.Log("Backtracked tiles: " + backtrackedTiles);
     }
 
-    // recursively generate the terrain grid with wave function collapse and backtracking
+    // Generate the terrain grid with wave function collapse and backtracking
     void GenerateTerrainGrid()
     {
         // Get the lowest entropy position
@@ -123,34 +150,49 @@ public class GenerateTerrain : MonoBehaviour
         int x = lowestEntropyPosition.x;
         int z = lowestEntropyPosition.y;
 
-        // Get the randomized prefabs and angles
-        GameObject[] randomizedPrefabs = GetRandomizedPrefabs();
-        int[] randomizedAngles = GetRandomizedAngles();
+        // Get the possible prefabs for the position
+        Dictionary<GameObject, List<int>> possiblePrefabsForPosition = possiblePrefabs[new Vector2Int(x, z)];
+        GameObject[] randomizedPrefabs = Randomize(prefabs);
 
-        // Check all prefabs
+        // Iterate through the possible prefabs randomly
         for (int i = 0; i < randomizedPrefabs.Length; i++)
         {
-            // Check all angles
-            for (int j = 0; j < randomizedAngles.Length; j++)
+            // Get the prefab
+            GameObject prefab = randomizedPrefabs[i];
+
+            // Get the orientations for the prefab
+            List<int> orientations = possiblePrefabsForPosition[prefab];
+
+            // Randomize the orientations
+            orientations = Randomize(orientations);
+
+            // Iterate through the orientations randomly
+            for (int j = 0; j < orientations.Count; j++)
             {
-                // If the tile can be placed at the position
-                if (CanPlaceTile(randomizedPrefabs[i], x, z, randomizedAngles[j]))
-                {
-                    // Instantiate the tile at the position
-                    terrainGrid[x, z] = Instantiate(randomizedPrefabs[i], new Vector3(x, 0, z), Quaternion.Euler(-90, 0, randomizedAngles[j]));
+                // Get the orientation
+                int orientation = orientations[j];
 
-                    // Recursively generate the terrain grid
-                    GenerateTerrainGrid();
+                // Instantiate the tile
+                GameObject tile = Instantiate(prefab, new Vector3(x, 0, z), Quaternion.Euler(-90, 0, orientation));
 
-                    // If the terrain grid is complete, return
-                    if (IsTerrainGridComplete()) return;
+                // Add the tile to the terrain grid
+                terrainGrid[x, z] = tile;
 
-                    // Destroy the tile at the position
-                    Destroy(terrainGrid[x, z]);
+                // Update the ordered positions, entropies, and possible prefabs
+                UpdateOrderedPositions(x, z);
 
-                    // Increment the backtracked tiles counter
-                    backtrackedTiles++;
-                }
+                // Generate the terrain grid recursively
+                GenerateTerrainGrid();
+
+                // If the terrain grid is complete, return
+                if (IsTerrainGridComplete()) return;
+
+                // If the terrain grid is not complete, remove the tile
+                Destroy(tile);
+                terrainGrid[x, z] = null;
+
+                // Increment the number of backtracked tiles
+                backtrackedTiles++;
             }
         }
     }
@@ -260,42 +302,92 @@ public class GenerateTerrain : MonoBehaviour
     }
 
     // Get number of possible orientations for a tile in a given position
-    int GetOrientations(GameObject tile, int x, int z)
+    int GetOrientations(Dictionary<GameObject, List<int>> possiblePrefabs, GameObject tile, int x, int z)
     {
         int orientations = 0;
+
+        // Clear the list of orientations
+        possiblePrefabs[tile].Clear();
 
         // Check all 4 rotations
         for (int angle = 0; angle < 360; angle += 90)
         {
-            if (CanPlaceTile(tile, x, z, angle)) orientations++;
+            if (CanPlaceTile(tile, x, z, angle)) 
+            {
+                // Add the orientation to the list
+                possiblePrefabs[tile].Add(angle);
+                
+                // Increment the number of orientations
+                orientations++;
+            }
         }
 
         return orientations;
     }
 
     // Get entropy for a position
-    int GetEntropy(int x, int z)
+    int GetEntropy(Dictionary<GameObject, List<int>> possiblePrefabs, int x, int z)
     {
         int entropy = 0;
 
         // Check all prefabs
         for (int i = 0; i < prefabs.Length; i++)
         {
-            entropy += GetOrientations(prefabs[i], x, z);
+            entropy += GetOrientations(possiblePrefabs, prefabs[i], x, z);
         }
 
         return entropy;
     }
 
-    // Get lowest entropy position without a tile
+    // Get the lowest entropy position that is empty (assumes positions are ordered from lowest to highest entropy)
     Vector2Int GetLowestEntropyPosition()
     {
-        // Initialize the lowest entropy position
-        Vector2Int lowestEntropyPosition = new Vector2Int(0, 0);
+        // Check all positions
+        for (int i = 0; i < orderedPositions.Count; i++)
+        {
+            // If there is no tile at the position
+            if (terrainGrid[orderedPositions[i].x, orderedPositions[i].y] == null)
+            {
+                // Return the position
+                return orderedPositions[i];
+            }
+        }
 
-        // Initialize the lowest entropy
-        int lowestEntropy = 1000;
+        // If there are no more positions with 0 entropy, return (0, 0)
+        return new Vector2Int(0, 0);
+    }
 
+    // Update ordered positions, entropies, and possible prefabs if a tile is placed at a position (do not remove the position from the list, as it will be needed for backtracking)
+    void UpdateOrderedPositions(int x, int z)
+    {
+        // Check neighboring positions
+        for (int i = 0; i < 4; i++)
+        {
+            // Get the neighboring position
+            Vector2Int neighborPosition = new Vector2Int(x, z);
+            if (i == 0) neighborPosition.y -= 1;
+            else if (i == 1) neighborPosition.x += 1;
+            else if (i == 2) neighborPosition.y += 1;
+            else if (i == 3) neighborPosition.x -= 1;
+
+            // If position is edge, continue
+            if (neighborPosition.x == 0 || neighborPosition.x == gridSizeX - 1 || neighborPosition.y == 0 || neighborPosition.y == gridSizeZ - 1) continue;
+
+            // Update the entropy for the neighboring position
+            int index = orderedPositions.IndexOf(neighborPosition);
+            if (index != -1) {
+                entropies[index] = GetEntropy(possiblePrefabs[neighborPosition], neighborPosition.x, neighborPosition.y);
+            }
+        }
+
+        // Sort the lists based on entropy
+        QuickSort(entropies, orderedPositions, 0, entropies.Count - 1);
+        
+    }
+
+    // Generate ordered list of positions from lowest to highest entropy
+    void GenerateOrderedPositions()
+    {
         // Check all positions
         for (int x = 1; x < gridSizeX-1; x++)
         {
@@ -313,30 +405,74 @@ public class GenerateTerrain : MonoBehaviour
                     else 
                     {
                         // Get the entropy for the position
-                        entropy = GetEntropy(x, z);
+                        entropy = GetEntropy(possiblePrefabs[new Vector2Int(x, z)], x, z);
                     }
 
-                    // If the entropy is lower than the current lowest entropy
-                    if (entropy < lowestEntropy)
-                    {
-                        // Update the lowest entropy and lowest entropy position
-                        lowestEntropy = entropy;
-                        lowestEntropyPosition = new Vector2Int(x, z);
-                    }
+                    // Add the position and entropy to the lists
+                    orderedPositions.Add(new Vector2Int(x, z));
+                    entropies.Add(entropy);
                 }
             }
         }
 
-        return lowestEntropyPosition;
+        // Sort the lists based on entropy
+        QuickSort(entropies, orderedPositions, 0, entropies.Count - 1);
     }
 
-    // Get randomized order of prefabs
-    GameObject[] GetRandomizedPrefabs()
+    public static void QuickSort(List<int> entropies, List<Vector2Int> orderedPositions, int low, int high)
+    {
+        if (low < high)
+        {
+            int pi = Partition(entropies, orderedPositions, low, high);
+
+            QuickSort(entropies, orderedPositions, low, pi - 1);
+            QuickSort(entropies, orderedPositions, pi + 1, high);
+        }
+    }
+
+    private static int Partition(List<int> entropies, List<Vector2Int> orderedPositions, int low, int high)
+    {
+        int pivot = entropies[high];
+        int i = (low - 1);
+
+        for (int j = low; j < high; j++)
+        {
+            if (entropies[j] < pivot)
+            {
+                i++;
+
+                // Swap entropies
+                int tempEntropy = entropies[i];
+                entropies[i] = entropies[j];
+                entropies[j] = tempEntropy;
+
+                // Swap positions
+                Vector2Int tempPosition = orderedPositions[i];
+                orderedPositions[i] = orderedPositions[j];
+                orderedPositions[j] = tempPosition;
+            }
+        }
+
+        // Swap entropies
+        int tempEntropy1 = entropies[i + 1];
+        entropies[i + 1] = entropies[high];
+        entropies[high] = tempEntropy1;
+
+        // Swap positions
+        Vector2Int tempPosition1 = orderedPositions[i + 1];
+        orderedPositions[i + 1] = orderedPositions[high];
+        orderedPositions[high] = tempPosition1;
+
+        return i + 1;
+    }
+
+    // Return a randomized array of prefabs
+    GameObject[] Randomize(GameObject[] prefabs)
     {
         // Create a new array to store the randomized prefabs
         GameObject[] randomizedPrefabs = new GameObject[prefabs.Length];
 
-        // Create a list of integers to store the indices of the prefabs
+        // Create a list to store the indices of the prefabs
         List<int> indices = new List<int>();
 
         // Add all indices to the list
@@ -345,14 +481,17 @@ public class GenerateTerrain : MonoBehaviour
             indices.Add(i);
         }
 
-        // Randomize the order of the indices
+        // Iterate through the prefabs
         for (int i = 0; i < prefabs.Length; i++)
         {
             // Get a random index
             int randomIndex = Random.Range(0, indices.Count);
 
-            // Add the prefab at the random index to the randomized prefabs array
-            randomizedPrefabs[i] = prefabs[indices[randomIndex]];
+            // Get the prefab at the random index
+            GameObject prefab = prefabs[indices[randomIndex]];
+
+            // Add the prefab to the randomized prefabs array
+            randomizedPrefabs[i] = prefab;
 
             // Remove the index from the list
             indices.RemoveAt(randomIndex);
@@ -361,24 +500,37 @@ public class GenerateTerrain : MonoBehaviour
         return randomizedPrefabs;
     }
 
-    // Get randomized order of angles
-    int[] GetRandomizedAngles()
+    // Return a randomized array of orientations
+    List<int> Randomize(List<int> orientations)
     {
-        // Create a new array to store the randomized angles
-        int[] randomizedAngles = new int[] { 0, 90, 180, 270 };
+        // Create a new list to store the randomized orientations
+        List<int> randomizedOrientations = new List<int>();
 
-        // Randomize the order of the angles
-        for (int i = 0; i < randomizedAngles.Length; i++)
+        // Create a list to store the indices of the orientations
+        List<int> indices = new List<int>();
+
+        // Add all indices to the list
+        for (int i = 0; i < orientations.Count; i++)
         {
-            // Get a random index
-            int randomIndex = Random.Range(0, randomizedAngles.Length);
-
-            // Swap the angle at the random index with the angle at the current index
-            int temp = randomizedAngles[i];
-            randomizedAngles[i] = randomizedAngles[randomIndex];
-            randomizedAngles[randomIndex] = temp;
+            indices.Add(i);
         }
 
-        return randomizedAngles;
+        // Iterate through the orientations
+        for (int i = 0; i < orientations.Count; i++)
+        {
+            // Get a random index
+            int randomIndex = Random.Range(0, indices.Count);
+
+            // Get the orientation at the random index
+            int orientation = orientations[indices[randomIndex]];
+
+            // Add the orientation to the randomized orientations list
+            randomizedOrientations.Add(orientation);
+
+            // Remove the index from the list
+            indices.RemoveAt(randomIndex);
+        }
+
+        return randomizedOrientations;
     }
 }
