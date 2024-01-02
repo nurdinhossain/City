@@ -25,10 +25,7 @@ public class GenerateTerrain : MonoBehaviour
     // Array to store instantiated tiles
     private GameObject[,] terrainGrid;
 
-    // Dictionary for storing open/closed arrays for each prefab
-    private Dictionary<string, int[]> openClosedArrays = new Dictionary<string, int[]>();
-
-    // Dictionary for storing prefab terrain type and open/closed arrays (all represented as integers)
+    // Dictionary for storing prefab open/closed arrays (all represented as integers)
     private Dictionary<string, int[]> terrainRestrictions = new Dictionary<string, int[]>();
 
     // Dictionary for storing possible prefabs and orientations for each position
@@ -43,27 +40,20 @@ public class GenerateTerrain : MonoBehaviour
 
     // Constants
     private const int CLOSED = -1;
+    private const int INVALID = -2;
 
     void Start()
     {
         // Initialize the prefabs array
         prefabs = new GameObject[] { fourway, land, roadend, roadstraight, troad, turnroad };
 
-        // Initialize the open/closed arrays dictionary
-        openClosedArrays.Add(fourway.name, new int[] { 1, 1, 1, 1 });
-        openClosedArrays.Add(land.name, new int[] { 0, 0, 0, 0 });
-        openClosedArrays.Add(roadend.name, new int[] { 1, 0, 0, 0 });
-        openClosedArrays.Add(roadstraight.name, new int[] { 0, 1, 0, 1 });
-        openClosedArrays.Add(troad.name, new int[] { 1, 1, 1, 0 });
-        openClosedArrays.Add(turnroad.name, new int[] { 1, 0, 0, 1 });
-
         // Initialize the terrain restrictions dictionary
-        terrainRestrictions.Add(fourway.name, new int[] { 0, 0, 0, 0, 0 }); // first value is terrain type, rest are allowed terrain types neighboring each side
-        terrainRestrictions.Add(land.name, new int[] { 1, CLOSED, CLOSED, CLOSED, CLOSED }); // 1 = land, -1 = closed
-        terrainRestrictions.Add(roadend.name, new int[] { 0, 0, CLOSED, CLOSED, CLOSED }); // 2nd value is 0 because it is open road, rest are closed
-        terrainRestrictions.Add(roadstraight.name, new int[] { 0, CLOSED, 0, CLOSED, 0 }); // 2nd and 4th values are 0 because they are open road, rest are closed
-        terrainRestrictions.Add(troad.name, new int[] { 0, 0, 0, 0, CLOSED }); // 2nd, 3rd, and 4th values are 0 because they are open road, last value is closed
-        terrainRestrictions.Add(turnroad.name, new int[] { 0, 0, CLOSED, CLOSED, 0 }); // 2nd and 5th values are 0 because they are open road, rest are closed
+        terrainRestrictions.Add(fourway.name, new int[] { 0, 0, 0, 0 }); // first value is terrain type, rest are allowed terrain types neighboring each side
+        terrainRestrictions.Add(land.name, new int[] { CLOSED, CLOSED, CLOSED, CLOSED }); // 1 = land, -1 = closed
+        terrainRestrictions.Add(roadend.name, new int[] { 0, CLOSED, CLOSED, CLOSED }); // 2nd value is 0 because it is open road, rest are closed
+        terrainRestrictions.Add(roadstraight.name, new int[] { CLOSED, 0, CLOSED, 0 }); // 2nd and 4th values are 0 because they are open road, rest are closed
+        terrainRestrictions.Add(troad.name, new int[] { 0, 0, 0, CLOSED }); // 2nd, 3rd, and 4th values are 0 because they are open road, last value is closed
+        terrainRestrictions.Add(turnroad.name, new int[] { 0, CLOSED, CLOSED, 0 }); // 2nd and 5th values are 0 because they are open road, rest are closed
 
         // Initialize the possible prefabs dictionary
         for (int x = 0; x < gridSizeX; x++)
@@ -243,29 +233,33 @@ public class GenerateTerrain : MonoBehaviour
     bool CanPlaceTile(GameObject tile, int x, int z, int angle)
     {
         // Get the open/closed array for the tile (Take out "(Clone)" from the name)
-        int[] tileArray = openClosedArrays[tile.name.Replace("(Clone)", "")];
+        int[] tileArray = terrainRestrictions[tile.name.Replace("(Clone)", "")];
 
         // Get the open/closed array for the surrounding tiles
         int east = x - 1, west = x + 1, north = z - 1, south = z + 1;
-        System.Span<int> northArray = stackalloc int[4] { 2, 2, 2, 2 };
-        System.Span<int> eastArray = stackalloc int[4] { 2, 2, 2, 2 };
-        System.Span<int> southArray = stackalloc int[4] { 2, 2, 2, 2 };
-        System.Span<int> westArray = stackalloc int[4] { 2, 2, 2, 2 };
+
+        // If all surrounding tiles are empty, return true
+        if (terrainGrid[x, north] == null && terrainGrid[east, z] == null && terrainGrid[x, south] == null && terrainGrid[west, z] == null) return true;
+
+        System.Span<int> northArray = stackalloc int[4] { INVALID, INVALID, INVALID, INVALID };
+        System.Span<int> eastArray = stackalloc int[4] { INVALID, INVALID, INVALID, INVALID };
+        System.Span<int> southArray = stackalloc int[4] { INVALID, INVALID, INVALID, INVALID };
+        System.Span<int> westArray = stackalloc int[4] { INVALID, INVALID, INVALID, INVALID };
 
         // Rotate the surrounding tile arrays based on angle of that tile (only if there is a tile there)
-        if (terrainGrid[x, north] != null) northArray = RotateArray(openClosedArrays[terrainGrid[x, north].name.Replace("(Clone)", "")], (int)terrainGrid[x, north].transform.eulerAngles.y);
-        if (terrainGrid[east, z] != null) eastArray = RotateArray(openClosedArrays[terrainGrid[east, z].name.Replace("(Clone)", "")], (int)terrainGrid[east, z].transform.eulerAngles.y);
-        if (terrainGrid[x, south] != null) southArray = RotateArray(openClosedArrays[terrainGrid[x, south].name.Replace("(Clone)", "")], (int)terrainGrid[x, south].transform.eulerAngles.y);
-        if (terrainGrid[west, z] != null) westArray = RotateArray(openClosedArrays[terrainGrid[west, z].name.Replace("(Clone)", "")], (int)terrainGrid[west, z].transform.eulerAngles.y);
+        if (terrainGrid[x, north] != null) northArray = RotateArray(terrainRestrictions[terrainGrid[x, north].name.Replace("(Clone)", "")], (int)terrainGrid[x, north].transform.eulerAngles.y);
+        if (terrainGrid[east, z] != null) eastArray = RotateArray(terrainRestrictions[terrainGrid[east, z].name.Replace("(Clone)", "")], (int)terrainGrid[east, z].transform.eulerAngles.y);
+        if (terrainGrid[x, south] != null) southArray = RotateArray(terrainRestrictions[terrainGrid[x, south].name.Replace("(Clone)", "")], (int)terrainGrid[x, south].transform.eulerAngles.y);
+        if (terrainGrid[west, z] != null) westArray = RotateArray(terrainRestrictions[terrainGrid[west, z].name.Replace("(Clone)", "")], (int)terrainGrid[west, z].transform.eulerAngles.y);
 
         // Rotate the tile array based on the angle
         tileArray = RotateArray(tileArray, angle);
 
         // Check if the tile can be placed
-        if (tileArray[0] != northArray[2] && northArray[2] != 2) return false;
-        if (tileArray[1] != eastArray[3] && eastArray[3] != 2) return false;
-        if (tileArray[2] != southArray[0] && southArray[0] != 2) return false;
-        if (tileArray[3] != westArray[1] && westArray[1] != 2) return false;
+        if (tileArray[0] != northArray[2] && northArray[2] != INVALID) return false;
+        if (tileArray[1] != eastArray[3] && eastArray[3] != INVALID) return false;
+        if (tileArray[2] != southArray[0] && southArray[0] != INVALID) return false;
+        if (tileArray[3] != westArray[1] && westArray[1] != INVALID) return false;
 
         return true;
     }
