@@ -128,9 +128,11 @@ public class GenerateTerrain : MonoBehaviour
 
         // Get the possible prefabs for the position
         Dictionary<GameObject, List<int>> possiblePrefabsForPosition = possiblePrefabs[new Vector2Int(x, z)];
+
+        // Randomize the prefabs
         GameObject[] randomizedPrefabs = Randomize(prefabs);
 
-        // Iterate through the possible prefabs randomly
+        // Iterate through the possible prefabs
         for (int i = 0; i < randomizedPrefabs.Length; i++)
         {
             // Get the prefab
@@ -142,7 +144,7 @@ public class GenerateTerrain : MonoBehaviour
             // Randomize the orientations
             orientations = Randomize(orientations);
 
-            // Iterate through the orientations randomly
+            // Iterate through the orientations 
             for (int j = 0; j < orientations.Count; j++)
             {
                 // Get the orientation
@@ -440,71 +442,45 @@ public class GenerateTerrain : MonoBehaviour
         return i + 1;
     }
 
-    // Return a randomized array of prefabs
-    GameObject[] Randomize(GameObject[] prefabs)
+// Return a randomized array of prefabs
+GameObject[] Randomize(GameObject[] prefabs)
+{
+    // Create a new array to store the randomized prefabs
+    GameObject[] randomizedPrefabs = (GameObject[])prefabs.Clone();
+
+    // Iterate from the last element to the first
+    for (int i = randomizedPrefabs.Length - 1; i > 0; i--)
     {
-        // Create a new array to store the randomized prefabs
-        GameObject[] randomizedPrefabs = new GameObject[prefabs.Length];
+        // Get a random index less than or equal to the current index
+        int randomIndex = Random.Range(0, i + 1);
 
-        // Create a list to store the indices of the prefabs
-        List<int> indices = new List<int>();
-
-        // Add all indices to the list
-        for (int i = 0; i < prefabs.Length; i++)
-        {
-            indices.Add(i);
-        }
-
-        // Iterate through the prefabs
-        for (int i = 0; i < prefabs.Length; i++)
-        {
-            // Get a random index
-            int randomIndex = Random.Range(0, indices.Count);
-
-            // Get the prefab at the random index
-            GameObject prefab = prefabs[indices[randomIndex]];
-
-            // Add the prefab to the randomized prefabs array
-            randomizedPrefabs[i] = prefab;
-
-            // Remove the index from the list
-            indices.RemoveAt(randomIndex);
-        }
-
-        return randomizedPrefabs;
+        // Swap the prefab at the current index with the prefab at the random index
+        GameObject temp = randomizedPrefabs[i];
+        randomizedPrefabs[i] = randomizedPrefabs[randomIndex];
+        randomizedPrefabs[randomIndex] = temp;
     }
 
-    // Return a randomized array of orientations
-    List<int> Randomize(List<int> orientations)
+    return randomizedPrefabs;
+}
+
+// Return a randomized array of orientations
+List<int> Randomize(List<int> orientations)
+{
+    // Create a new list to store the randomized orientations
+    List<int> randomizedOrientations = new List<int>(orientations);
+
+    // Iterate from the last element to the first
+    for (int i = randomizedOrientations.Count - 1; i > 0; i--)
     {
-        // Create a new list to store the randomized orientations
-        List<int> randomizedOrientations = new List<int>();
+        // Get a random index less than or equal to the current index
+        int randomIndex = Random.Range(0, i + 1);
 
-        // Create a list to store the indices of the orientations
-        List<int> indices = new List<int>();
-
-        // Add all indices to the list
-        for (int i = 0; i < orientations.Count; i++)
-        {
-            indices.Add(i);
-        }
-
-        // Iterate through the orientations
-        for (int i = 0; i < orientations.Count; i++)
-        {
-            // Get a random index
-            int randomIndex = Random.Range(0, indices.Count);
-
-            // Get the orientation at the random index
-            int orientation = orientations[indices[randomIndex]];
-
-            // Add the orientation to the randomized orientations list
-            randomizedOrientations.Add(orientation);
-
-            // Remove the index from the list
-            indices.RemoveAt(randomIndex);
-        }
-
-        return randomizedOrientations;
+        // Swap the orientation at the current index with the orientation at the random index
+        int temp = randomizedOrientations[i];
+        randomizedOrientations[i] = randomizedOrientations[randomIndex];
+        randomizedOrientations[randomIndex] = temp;
     }
+
+    return randomizedOrientations;
+}
 }
