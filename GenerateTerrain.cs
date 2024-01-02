@@ -26,9 +26,11 @@ public class GenerateTerrain : MonoBehaviour
     public int[] troadOpen = { 1, 1, 1, 0 };
     public int[] turnroadOpen = { 1, 0, 0, 1 };
  
-    // Grid dimensions
+    // Grid dimensions and starting position
     public int gridSizeX = 10;
     public int gridSizeZ = 10;
+    public int startX = 0;
+    public int startZ = 0;
 
     // Array to store instantiated tiles
     private GameObject[,] terrainGrid;
@@ -46,7 +48,7 @@ public class GenerateTerrain : MonoBehaviour
     void Start()
     {
         // Initialize the prefabs array
-        prefabs = new GameObject[] { fourway, land, /*roadend,*/ roadstraight, troad, turnroad };
+        prefabs = new GameObject[] { /*fourway,*/ /*land,*/ /*roadend,*/ roadstraight, /*troad,*/ turnroad };
 
         // Initialize the possible prefabs dictionary
         for (int x = 0; x < gridSizeX; x++)
@@ -66,45 +68,14 @@ public class GenerateTerrain : MonoBehaviour
         // Initialize the array
         terrainGrid = new GameObject[gridSizeX, gridSizeZ];
 
-        // Fill edge tiles with roadend tiles facing outwards
-        /*for (int x = 0; x < gridSizeX; x++)
-        {
-            // Ignore the corners
-            if (x == 0 || x == gridSizeX - 1) continue;
-
-            // Instantiate the roadend tile facing north
-            terrainGrid[x, 0] = Instantiate(roadend, new Vector3(x, 0, 0), Quaternion.Euler(-90, 0, 180));
-
-            // Instantiate the roadend tile facing south
-            terrainGrid[x, gridSizeZ - 1] = Instantiate(roadend, new Vector3(x, 0, gridSizeZ - 1), Quaternion.Euler(-90, 0, 0));
-        }
-
-        for (int z = 0; z < gridSizeZ; z++)
-        {
-            // Ignore the corners
-            if (z == 0 || z == gridSizeZ - 1) continue;
-
-            // Instantiate the roadend tile facing east
-            terrainGrid[0, z] = Instantiate(roadend, new Vector3(0, 0, z), Quaternion.Euler(-90, 0, 270));
-
-            // Instantiate the roadend tile facing west
-            terrainGrid[gridSizeX - 1, z] = Instantiate(roadend, new Vector3(gridSizeX - 1, 0, z), Quaternion.Euler(-90, 0, 90));
-        }
-
-        // Fill corners with land tiles
-        terrainGrid[0, 0] = Instantiate(land, new Vector3(0, 0, 0), Quaternion.Euler(-90, 0, 0));
-        terrainGrid[0, gridSizeZ - 1] = Instantiate(land, new Vector3(0, 0, gridSizeZ - 1), Quaternion.Euler(-90, 0, 0));
-        terrainGrid[gridSizeX - 1, 0] = Instantiate(land, new Vector3(gridSizeX - 1, 0, 0), Quaternion.Euler(-90, 0, 0));
-        terrainGrid[gridSizeX - 1, gridSizeZ - 1] = Instantiate(land, new Vector3(gridSizeX - 1, 0, gridSizeZ - 1), Quaternion.Euler(-90, 0, 0));*/
-
         // Fill edge tiles with land tiles
         for (int x = 0; x < gridSizeX; x++)
         {
             // Instantiate the land tile facing north
-            terrainGrid[x, 0] = Instantiate(land, new Vector3(x, 0, 0), Quaternion.Euler(-90, 0, 0));
+            terrainGrid[x, 0] = Instantiate(land, new Vector3(startX + x, 0, startZ), Quaternion.Euler(-90, 0, 0));
 
             // Instantiate the land tile facing south
-            terrainGrid[x, gridSizeZ - 1] = Instantiate(land, new Vector3(x, 0, gridSizeZ - 1), Quaternion.Euler(-90, 0, 0));
+            terrainGrid[x, gridSizeZ - 1] = Instantiate(land, new Vector3(startX + x, 0, startZ + gridSizeZ - 1), Quaternion.Euler(-90, 0, 0));
         }
 
         for (int z = 0; z < gridSizeZ; z++)
@@ -113,10 +84,10 @@ public class GenerateTerrain : MonoBehaviour
             if (z == 0 || z == gridSizeZ - 1) continue;
 
             // Instantiate the land tile facing east
-            terrainGrid[0, z] = Instantiate(land, new Vector3(0, 0, z), Quaternion.Euler(-90, 0, 0));
+            terrainGrid[0, z] = Instantiate(land, new Vector3(startX, 0, startZ + z), Quaternion.Euler(-90, 0, 0));
 
             // Instantiate the land tile facing west
-            terrainGrid[gridSizeX - 1, z] = Instantiate(land, new Vector3(gridSizeX - 1, 0, z), Quaternion.Euler(-90, 0, 0));
+            terrainGrid[gridSizeX - 1, z] = Instantiate(land, new Vector3(startX + gridSizeX - 1, 0, startZ + z), Quaternion.Euler(-90, 0, 0));
         }
         
         // Generate ordered list of positions from lowest to highest entropy
@@ -173,7 +144,7 @@ public class GenerateTerrain : MonoBehaviour
                 int orientation = orientations[j];
 
                 // Instantiate the tile
-                GameObject tile = Instantiate(prefab, new Vector3(x, 0, z), Quaternion.Euler(-90, 0, orientation));
+                GameObject tile = Instantiate(prefab, new Vector3(startX + x, 0, startZ + z), Quaternion.Euler(-90, 0, orientation));
 
                 // Add the tile to the terrain grid
                 terrainGrid[x, z] = tile;
@@ -201,9 +172,9 @@ public class GenerateTerrain : MonoBehaviour
     bool IsTerrainGridComplete()
     {
         // Check all positions
-        for (int x = 0; x < gridSizeX; x++)
+        for (int x = 1; x < gridSizeX-1; x++)
         {
-            for (int z = 0; z < gridSizeZ; z++)
+            for (int z = 1; z < gridSizeZ-1; z++)
             {
                 // If there is no tile at the position, return false
                 if (terrainGrid[x, z] == null) return false;
@@ -375,7 +346,8 @@ public class GenerateTerrain : MonoBehaviour
 
             // Update the entropy for the neighboring position
             int index = orderedPositions.IndexOf(neighborPosition);
-            if (index != -1) {
+            if (index != -1)
+            {
                 entropies[index] = GetEntropy(possiblePrefabs[neighborPosition], neighborPosition.x, neighborPosition.y);
             }
         }
@@ -400,7 +372,17 @@ public class GenerateTerrain : MonoBehaviour
                     int entropy = 0;
                     if (terrainGrid[x, z - 1] == null && terrainGrid[x + 1, z] == null && terrainGrid[x, z + 1] == null && terrainGrid[x - 1, z] == null)
                     {
+                        // Get the entropy for the position
                         entropy = prefabs.Length * 4;
+
+                        // Add all orientations to the list
+                        for (int i = 0; i < prefabs.Length; i++)
+                        {
+                            possiblePrefabs[new Vector2Int(x, z)][prefabs[i]].Add(0);
+                            possiblePrefabs[new Vector2Int(x, z)][prefabs[i]].Add(90);
+                            possiblePrefabs[new Vector2Int(x, z)][prefabs[i]].Add(180);
+                            possiblePrefabs[new Vector2Int(x, z)][prefabs[i]].Add(270);
+                        }
                     }
                     else 
                     {
