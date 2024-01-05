@@ -4,16 +4,6 @@ using System.Linq;
 using UnityEngine;
 using System.Diagnostics;
 
-public class Vector2IntComparer : IComparer<Vector2Int>
-{
-    public int Compare(Vector2Int a, Vector2Int b)
-    {
-        int result = a.x.CompareTo(b.x);
-        if (result != 0) return result;
-        return a.y.CompareTo(b.y);
-    }
-}
-
 public class GenerateTerrain : MonoBehaviour
 {
     // Reference to prefabs 
@@ -23,7 +13,6 @@ public class GenerateTerrain : MonoBehaviour
     public GameObject roadstraight;
     public GameObject troad;
     public GameObject turnroad;
-    public int maxAttempts = 10000;
 
     // Array to store prefabs
     public GameObject[] prefabs;
@@ -47,22 +36,18 @@ public class GenerateTerrain : MonoBehaviour
     private List<Vector2Int> positions = new List<Vector2Int>();
     private List<int> entropies = new List<int>();
 
-    // Stack for backtracking
-    private Stack<Vector2Int> removedPositions = new Stack<Vector2Int>();
-    private Stack<int> removedEntropies = new Stack<int>();
-
     // Counter for backtracked tiles and attempts
     private int backtrackedTiles = 0;
-    private int attempts = 0;
 
     // Constants
     private const int CLOSED = -1;
     private const int INVALID = -2;
+    private const int MAX_ENTROPY = 1000;
 
     void Start()
     {
         // Initialize the prefabs array
-        prefabs = new GameObject[] { fourway, land, roadend, roadstraight, troad, turnroad };
+        prefabs = new GameObject[] { /*fourway, land, roadend, roadstraight, troad,*/ turnroad };
 
         // Initialize the terrain restrictions dictionary
         terrainRestrictions.Add(fourway.name, new int[] { 0, 0, 0, 0 }); // first value is terrain type, rest are allowed terrain types neighboring each side
@@ -120,7 +105,7 @@ public class GenerateTerrain : MonoBehaviour
         // Generate the terrain grid
         Stopwatch stopwatch = new Stopwatch();
         stopwatch.Start();
-        GenerateTerrainGrid(maxAttempts);
+        GenerateTerrainGrid();
         stopwatch.Stop();
 
         // Print the time taken to generate the terrain grid
@@ -131,82 +116,80 @@ public class GenerateTerrain : MonoBehaviour
     }
 
     // Generate the terrain grid with wave function collapse and backtracking
-    void GenerateTerrainGrid(int maxAttempts)
+    void GenerateTerrainGrid()
     {
-        // Infinite loop for iterative backtracking
-        while (!IsTerrainGridComplete())
+        // Get the lowest entropy position
+        Vector2Int lowestEntropyPosition = positions[positions.Count - 1];
+        int lowestEntropy = entropies[entropies.Count - 1];
+
+        // If lowest entropy is 0, return
+        if (lowestEntropy == 0) return;
+
+        // Get the possible prefabs for the lowest entropy position
+        Dictionary<GameObject, List<int>> possiblePrefabsForPosition = possiblePrefabs[lowestEntropyPosition];
+
+        // Create a list of prefabs that can be placed at the position based on which prefabs have orientations
+        List<GameObject> possiblePrefabsList = new List<GameObject>();
+        foreach (KeyValuePair<GameObject, List<int>> possiblePrefab in possiblePrefabsForPosition)
         {
-            // Get the lowest entropy position
-            Vector2Int lowestEntropyPosition = positions[positions.Count - 1];
-            int lowestEntropy = entropies[entropies.Count - 1];
+            if (possiblePrefab.Value.Count > 0) possiblePrefabsList.Add(possiblePrefab.Key);
+        }
 
-            // Remove the position and its entropy from the ordered positions and entropies
-            positions.RemoveAt(positions.Count - 1);
-            entropies.RemoveAt(entropies.Count - 1);
+        // Randomize the list of prefabs
+        possiblePrefabsList = possiblePrefabsList.OrderBy(prefab => Random.value).ToList();
 
-            // Push the removed position and its entropy to the stack
-            removedPositions.Push(lowestEntropyPosition);
-            removedEntropies.Push(lowestEntropy);
-
-            // Get the x and z coordinates of the lowest entropy position
-            int x = lowestEntropyPosition.x;
-            int z = lowestEntropyPosition.y;
-
-            // Get the workable prefabs for the position (prefabs with more than 0 orientations)
-            List<GameObject> workablePrefabs = possiblePrefabs[lowestEntropyPosition].Where(prefab => prefab.Value.Count > 0).Select(prefab => prefab.Key).ToList();
-
-            // Pick a random prefab from the possible prefabs
-            int randomPrefab = Random.Range(0, workablePrefabs.Count);
+        // Check all prefabs that can be placed at the position
+        for (int i = 0; i < possiblePrefabsList.Count; i++)
+        {
+            // Get the prefab
+            GameObject prefab = possiblePrefabsList[i];
 
             // Get the possible orientations for the prefab
-            List<int> possibleOrientations = possiblePrefabs[lowestEntropyPosition][workablePrefabs[randomPrefab]];
-            
-            // Pick a random orientation from the possible orientations
-            int randomOrientation = possibleOrientations[Random.Range(0, possibleOrientations.Count)];
+            List<int> possibleOrientations = possiblePrefabsForPosition[prefab];
 
-            // Instantiate the tile
-            GameObject tile = Instantiate(workablePrefabs[randomPrefab], new Vector3(startX + x, 0, startZ + z), Quaternion.Euler(-90, 0, randomOrientation));
+            // Randomize the list of orientations
+            possibleOrientations = possibleOrientations.OrderBy(orientation => Random.value).ToList();
 
-            // Add the tile to the terrain grid
-            terrainGrid[x, z] = tile;
+            // Check all orientations that can be placed at the position
+            for (int j = 0; j < possibleOrientations.Count; j++)
+            {
+                // Get the orientation
+                int orientation = possibleOrientations[j];
 
-            // Update the ordered positions, entropies, and possible prefabs
-            UpdateOrderedPositions(x, z);
+                // Instantiate the prefab at the position with the orientation
+                GameObject tile = Instantiate(prefab, new Vector3(startX + lowestEntropyPosition.x, 0, startZ + lowestEntropyPosition.y), Quaternion.Euler(-90, orientation, 0));
 
-            // Increment the number of attempts
-            attempts++;
+                // Add the tile to the terrain grid
+                terrainGrid[lowestEntropyPosition.x, lowestEntropyPosition.y] = tile;
 
-            // If the number of attempts is greater than the max attempts, return
-            if (attempts > maxAttempts) return;
+                // If the terrain grid is complete, return
+                if (IsTerrainGridComplete()) return;
+
+                // If the terrain grid is not complete, make entropy of this position max value
+                entropies[positions.Count - 1] = MAX_ENTROPY;
+
+                // Update the ordered positions
+                UpdateOrderedPositions(lowestEntropyPosition.x, lowestEntropyPosition.y);
+
+                // Generate the terrain grid
+                GenerateTerrainGrid();
+
+                // If the terrain grid is complete, return
+                if (IsTerrainGridComplete()) return;
+
+                // If the terrain grid is not complete, destroy the tile
+                Destroy(tile);
+
+                // Remove the tile from the terrain grid
+                terrainGrid[lowestEntropyPosition.x, lowestEntropyPosition.y] = null;
+
+                // Set the entropy of this position back to the lowest entropy
+                entropies[positions.Count - 1] = lowestEntropy;
+
+                // Increment the number of backtracked tiles
+                backtrackedTiles++;
+            }
         }
-    }
-
-    // Backtrack to the previous state
-    void Backtrack()
-    {
-        // Pop the removed position and its entropy
-        Vector2Int position = removedPositions.Pop();
-        int entropy = removedEntropies.Pop();
-
-        // Add the position and entropy back to the ordered positions and entropies
-        positions.Add(position);
-        entropies.Add(entropy);
-
-        // Get the x and z coordinates of the position
-        int x = position.x;
-        int z = position.y;
-
-        // Destroy the tile at the position
-        Destroy(terrainGrid[x, z]);
-
-        // Set the position in the terrain grid to null
-        terrainGrid[x, z] = null;
-
-        // Update the ordered positions, entropies, and possible prefabs
-        UpdateOrderedPositions(x, z);
-
-        // Increment the number of backtracked tiles
-        backtrackedTiles++;
     }
 
     // Check if the terrain grid is complete
@@ -338,7 +321,7 @@ public class GenerateTerrain : MonoBehaviour
         return entropy;
     }
 
-    // Update ordered positions, entropies, and possible prefabs if a tile is placed at a position (do not remove the position from the list, as it will be needed for backtracking)
+    // Update ordered positions, entropies, and possible prefabs if a tile is placed at a position
     void UpdateOrderedPositions(int x, int z)
     {
         // Check neighboring positions
@@ -357,13 +340,6 @@ public class GenerateTerrain : MonoBehaviour
             // Update the entropy for the neighboring position
             int entropy = GetEntropy(possiblePrefabs[neighborPosition], neighborPosition.x, neighborPosition.y);
 
-            // If the entropy is 0, backtrack
-            if (entropy == 0)
-            {
-                Backtrack();
-                return;
-            }
-
             // Find the position in positions
             int index = positions.FindIndex(position => position == neighborPosition);
 
@@ -372,10 +348,12 @@ public class GenerateTerrain : MonoBehaviour
         }
 
         // Sort the positions based on entropy
-        positions = positions.Zip(entropies, (position, entropy) => new { Position = position, Entropy = entropy })
-                               .OrderByDescending(item => item.Entropy)
-                               .Select(item => item.Position)
-                               .ToList();
+        var sortedSequence = positions.Zip(entropies, (position, entropy) => new { Position = position, Entropy = entropy })
+                                    .OrderByDescending(item => item.Entropy)
+                                    .ToList();
+
+        positions = sortedSequence.Select(item => item.Position).ToList();
+        entropies = sortedSequence.Select(item => item.Entropy).ToList();
     }
 
     // Generate ordered list of positions from lowest to highest entropy
@@ -419,9 +397,11 @@ public class GenerateTerrain : MonoBehaviour
         }
 
         // Sort the positions based on entropy (highest to lowest)
-        positions = positions.Zip(entropies, (position, entropy) => new { Position = position, Entropy = entropy })
-                               .OrderByDescending(item => item.Entropy)
-                               .Select(item => item.Position)
-                               .ToList();
+        var sortedSequence = positions.Zip(entropies, (position, entropy) => new { Position = position, Entropy = entropy })
+                                    .OrderByDescending(item => item.Entropy)
+                                    .ToList();
+
+        positions = sortedSequence.Select(item => item.Position).ToList();
+        entropies = sortedSequence.Select(item => item.Entropy).ToList();
     }
 }
